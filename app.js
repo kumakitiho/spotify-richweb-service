@@ -1,1 +1,603 @@
-(()=>{const API='https://api.spotify.com/v1',TOKEN='record_dive_token',VERIFIER='record_dive_code_verifier',STATE='record_dive_auth_state',ranges={short_term:'4週間',medium_term:'6ヶ月',long_term:'全期間'};const demo=[['Plastic Love','Mariya Takeuchi','VARIETY',88,22,96,'1980s',['city pop','night drive'],'https://i.scdn.co/image/ab67616d0000b2730633e5b8b8a3f64f6528ad6d','https://open.spotify.com/search/Plastic%20Love%20Mariya%20Takeuchi'],['Sparkle','Tatsuro Yamashita','FOR YOU',84,30,92,'1980s',['aor','summer'],'https://i.scdn.co/image/ab67616d0000b2734ef7c8edc11f59f9995d0f45','https://open.spotify.com/search/Sparkle%20Tatsuro%20Yamashita'],['Stay With Me','Miki Matsubara','Pocket Park',91,18,89,'1970s',['city pop','midnight'],'https://i.scdn.co/image/ab67616d0000b273d5f8d5aa4a537c2f4c02acda','https://open.spotify.com/search/Stay%20With%20Me%20Miki%20Matsubara'],['Sweet Soul Revue','Pizzicato Five','Bossa Nova 2001',74,44,85,'1990s',['shibuya-kei','groove'],'https://i.scdn.co/image/ab67616d0000b273f0a627db1f953875ed2e9dc2','https://open.spotify.com/search/Sweet%20Soul%20Revue%20Pizzicato%20Five'],['ばらの花','くるり','TEAM ROCK',78,38,82,'2000s',['japanese indie','rainy'],'https://i.scdn.co/image/ab67616d0000b273352b935793bd162f02bd99c9','https://open.spotify.com/search/%E3%81%B0%E3%82%89%E3%81%AE%E8%8A%B1%20%E3%81%8F%E3%82%8B%E3%82%8A'],['Imaginary Beats','Record Dive','Sample Crate',69,57,81,'2000s',['lofi','jazz hop'],'https://i.scdn.co/image/ab67616d0000b2732c4c0a955156f3b9cce9bd2d','https://open.spotify.com/search/Nujabes']].map((r,i)=>({id:`demo-${i}`,title:r[0],artist:r[1],album:r[2],rank:i+1,popularity:r[3],rarity:r[4],diveScore:r[5],yearHint:r[6],genres:r[7],cover:r[8],spotifyUrl:r[9],previewUrl:null}));const s={token:null,range:'medium_term',query:'',records:[],visible:[],selected:null,endpoints:0,audio:null,t:0};const $=(q,r=document)=>r.querySelector(q),$$=(q,r=document)=>[...r.querySelectorAll(q)];const e={login:$('#login-btn'),logout:$('#logout-btn'),demo:$('#demo-btn'),auth:$('#auth-btn'),scroll:$('#scroll-btn'),status:$('#status-panel'),statusText:$('#status-text'),shelf:$('#record-shelf'),tpl:$('#record-card-template'),search:$('#record-search'),count:$('#crate-count'),insight:$('#insight-copy'),heroCover:$('#hero-cover'),vinylCover:$('#vinyl-cover'),sleeve:$('#floating-sleeve'),heroScore:$('#hero-score'),vinyl:$('#vinyl'),arm:$('#tonearm'),title:$('#now-title'),artist:$('#now-artist'),tags:$('#tag-row'),pop:$('#score-popularity'),rarity:$('#score-rarity'),dive:$('#score-dive'),preview:$('#preview-btn'),open:$('#open-spotify'),endpoints:$('#metric-endpoints'),recs:$('#metric-records'),mood:$('#metric-mood'),player:$('#metric-player'),viz:$('#audio-canvas')};const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0,clamp=(v,min,max)=>Math.max(min,Math.min(max,v)),unique=a=>[...new Set(a.filter(Boolean))];function cfg(){const c=window.RECORD_DIVE_CONFIG||{};return{clientId:c.CLIENT_ID||'YOUR_SPOTIFY_CLIENT_ID_HERE',auth:c.AUTH_URL||'https://accounts.spotify.com/authorize',token:c.TOKEN_ENDPOINT||'https://accounts.spotify.com/api/token',scopes:c.SCOPES||'user-top-read user-read-private user-read-email',redirect:c.REDIRECT_URI||`${location.origin}${location.pathname}`}}function status(msg,tone='neutral'){e.statusText.textContent=msg;e.status.classList.toggle('is-ok',tone==='ok');e.status.classList.toggle('is-error',tone==='error')}function metrics(){e.endpoints.textContent=s.endpoints;e.recs.textContent=s.visible.length;e.player.textContent=s.audio&&!s.audio.paused?'PLAY':'IDLE';e.mood.textContent=mood(s.visible)}function mood(rs){if(!rs.length)return'--';const p=avg(rs.map(r=>r.popularity)),rr=avg(rs.map(r=>r.rarity)),g=rs.flatMap(r=>r.genres).join(' ');if(p>78&&rr<35)return'ANTHEM';if(rr>58)return'DEEP';if(g.includes('city'))return'CITY';if(g.includes('rock'))return'ROCK';return'MIXED'}async function randomString(n=96){const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~',v=crypto.getRandomValues(new Uint8Array(n));return[...v].map(x=>chars[x%chars.length]).join('')}async function sha256(x){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(x))}function b64(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')}async function login(){const c=cfg();if(!c.clientId||c.clientId==='YOUR_SPOTIFY_CLIENT_ID_HERE'){status('CLIENT_IDが未設定です。config.jsを編集してください。','error');return}const verifier=await randomString(),challenge=b64(await sha256(verifier)),st=crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`;sessionStorage.setItem(VERIFIER,verifier);sessionStorage.setItem(STATE,st);const p=new URLSearchParams({client_id:c.clientId,response_type:'code',redirect_uri:c.redirect,scope:c.scopes,state:st,code_challenge_method:'S256',code_challenge:challenge});location.href=`${c.auth}?${p}`}async function callback(){const u=new URL(location.href),code=u.searchParams.get('code'),err=u.searchParams.get('error'),incoming=u.searchParams.get('state');if(err){status(`Spotify認証エラー: ${err}`,'error');clean();return false}if(!code)return false;const verifier=sessionStorage.getItem(VERIFIER),expected=sessionStorage.getItem(STATE);if(!verifier||expected!==incoming){status('認証stateの検証に失敗しました。','error');clean();return false}const c=cfg();try{const res=await fetch(c.token,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:c.clientId,grant_type:'authorization_code',code,redirect_uri:c.redirect,code_verifier:verifier})});if(!res.ok)throw new Error(res.status);const t=await res.json();t.expires_at=Date.now()+t.expires_in*1000;localStorage.setItem(TOKEN,JSON.stringify(t));s.token=t;clean();status('Spotify接続完了。あなたのレコード棚を生成します。','ok');return true}catch(ex){console.error(ex);status('トークン取得に失敗しました。Redirect URI設定を確認してください。','error');clean();return false}}function clean(){history.replaceState({},document.title,`${location.origin}${location.pathname}`);sessionStorage.removeItem(VERIFIER);sessionStorage.removeItem(STATE)}function stored(){try{const t=JSON.parse(localStorage.getItem(TOKEN)||'null');if(!t?.access_token||Date.now()>t.expires_at-30000){localStorage.removeItem(TOKEN);return null}s.token=t;return t}catch{return null}}function authButtons(){const on=!!s.token?.access_token;e.login.classList.toggle('hidden',on);e.logout.classList.toggle('hidden',!on);e.auth.textContent=on?'自分のSpotifyを再解析':'自分のSpotifyで掘る'}async function api(path){if(!s.token)throw new Error('not authed');s.endpoints++;metrics();const res=await fetch(`${API}${path}`,{headers:{Authorization:`Bearer ${s.token.access_token}`}});if(res.status===401){localStorage.removeItem(TOKEN);s.token=null;authButtons();throw new Error('expired')}if(!res.ok)throw new Error(res.status);return res.json()}async function loadSpotify(force=false){if(!s.token){await login();return}if(s.cache?.[s.range]&&!force){apply(s.cache[s.range]);return}status(`${ranges[s.range]}のSpotifyデータを取得中...`);try{const[me,tracks,artists]=await Promise.all([api('/me'),api(`/me/top/tracks?limit=36&time_range=${s.range}`),api(`/me/top/artists?limit=50&time_range=${s.range}`)]);const map=new Map();(artists.items||[]).forEach(a=>{map.set(a.id,a.genres||[]);map.set((a.name||'').toLowerCase(),a.genres||[])});const recs=(tracks.items||[]).map((t,i)=>toRecord(t,i,map));s.cache={...(s.cache||{}),[s.range]:recs};apply(recs);status(`${me.display_name||'Spotify user'} のレコード棚を生成しました。`,'ok')}catch(ex){console.error(ex);status('Spotify API取得に失敗しました。デモ表示に切り替えます。','error');loadDemo()}}function toRecord(t,i,map){const artists=t.artists||[],genres=unique(artists.flatMap(a=>map.get(a.id)||map.get((a.name||'').toLowerCase())||[])).slice(0,4),pop=Number(t.popularity||0),rarity=clamp(100-pop+i*1.25,4,99),dive=Math.round(clamp(pop*.48+rarity*.28+clamp(42-i,0,42)+(genres.length?8:0),0,99)),img=t.album?.images?.[0]?.url||t.album?.images?.[1]?.url||'';return{id:t.id||`track-${i}`,title:t.name||'Unknown track',artist:artists.map(a=>a.name).join(', ')||'Unknown artist',album:t.album?.name||'Unknown album',rank:i+1,popularity:pop,rarity:Math.round(rarity),diveScore:dive,yearHint:era(t.album?.release_date),genres:genres.length?genres:['personal pick'],cover:img,spotifyUrl:t.external_urls?.spotify||'#',previewUrl:t.preview_url||null}}function era(d=''){const y=Number(String(d).slice(0,4));return y?`${Math.floor(y/10)*10}s`:'unknown era'}function apply(records){s.records=records.length?records:demo;filter();if(s.visible[0])select(s.visible[0]);metrics()}function loadDemo(){apply(demo)}function filter(){const q=s.query.trim().toLowerCase();s.visible=s.records.filter(r=>!q||[r.title,r.artist,r.album,r.yearHint,...r.genres].join(' ').toLowerCase().includes(q));render();e.count.textContent=`${s.visible.length}枚`;e.insight.textContent=insight(s.visible);metrics()}function insight(rs){if(!rs.length)return'該当するレコードがありません。検索条件を変えてください。';const counts=new Map();rs.forEach(r=>r.genres.forEach(g=>counts.set(g,(counts.get(g)||0)+1)));const top=[...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]).join(' / ');return`${ranges[s.range]||'デモ'}の棚は ${top||'mixed'} 寄り。平均DIVE SCOREは${Math.round(avg(rs.map(r=>r.diveScore)))}。今日は${rs[0].title}から針を落とすのが良さそうです。`}function render(){e.shelf.innerHTML='';s.visible.forEach(r=>{const n=e.tpl.content.firstElementChild.cloneNode(true),img=$('.record-cover',n);n.dataset.id=r.id;img.src=r.cover;img.alt=`${r.album} album artwork`;$('.record-rank',n).textContent=`#${r.rank}`;$('.record-caption strong',n).textContent=r.title;$('.record-caption small',n).textContent=r.artist;n.classList.toggle('is-selected',s.selected?.id===r.id);n.addEventListener('pointermove',ev=>tilt(ev,n));n.addEventListener('pointerleave',()=>reset(n));n.addEventListener('click',()=>select(r));e.shelf.appendChild(n)})}function tilt(ev,n){const r=n.getBoundingClientRect(),x=(ev.clientX-r.left)/r.width-.5,y=(ev.clientY-r.top)/r.height-.5;n.style.setProperty('--tilt-y',`${x*11}deg`);n.style.setProperty('--tilt-x',`${y*-11}deg`);n.style.setProperty('--mx',`${x*120}px`);n.style.setProperty('--my',`${y*120}px`)}function reset(n){n.style.setProperty('--tilt-y','0deg');n.style.setProperty('--tilt-x','0deg');n.style.setProperty('--mx','0px');n.style.setProperty('--my','0px')}function select(r){s.selected=r;stop(false);e.heroCover.src=r.cover;e.vinylCover.src=r.cover;e.heroScore.textContent=String(r.diveScore).padStart(2,'0');e.title.textContent=r.title;e.artist.textContent=`${r.artist} — ${r.album}`;e.pop.textContent=r.popularity;e.rarity.textContent=r.rarity;e.dive.textContent=r.diveScore;e.open.href=r.spotifyUrl||'#';e.preview.disabled=!r.previewUrl;e.preview.textContent=r.previewUrl?'Preview':'Previewなし';e.tags.innerHTML='';[r.yearHint,...r.genres].slice(0,5).forEach(t=>{const x=document.createElement('span');x.textContent=t;e.tags.appendChild(x)});$$('.record-card',e.shelf).forEach(c=>c.classList.toggle('is-selected',c.dataset.id===r.id));e.sleeve.style.boxShadow=`0 30px 90px rgba(0,0,0,.42),0 0 90px hsla(${(r.diveScore*3.6)%360},90%,62%,.28)`;metrics()}async function preview(){const r=s.selected;if(!r?.previewUrl)return;if(s.audio&&s.audio.src===r.previewUrl&&!s.audio.paused){stop();return}stop(false);const a=new Audio(r.previewUrl);a.crossOrigin='anonymous';a.volume=.74;s.audio=a;try{await a.play();e.vinyl.classList.add('is-playing');e.arm.classList.add('is-playing');e.preview.textContent='Stop';metrics();a.addEventListener('ended',()=>stop(),{once:true})}catch(ex){console.warn(ex);status('ブラウザが音声再生を止めました。もう一度Previewを押してください。','error')}}function stop(reset=true){if(s.audio){s.audio.pause();s.audio.currentTime=0;s.audio=null}e.vinyl.classList.remove('is-playing');e.arm.classList.remove('is-playing');if(reset)e.preview.textContent=s.selected?.previewUrl?'Preview':'Previewなし';metrics()}function viz(){const c=e.viz,ctx=c.getContext('2d');const size=()=>{c.width=innerWidth;c.height=innerHeight};addEventListener('resize',size);size();(function draw(){ctx.clearRect(0,0,c.width,c.height);s.t+=.018;const r=s.selected||demo[0],bars=48,cy=c.height*.72;for(let i=0;i<bars;i++){const x=c.width/(bars-1)*i,h=(Math.sin(s.t*2+i*.42)*.5+.5)*(r.diveScore/100)*c.height*.22+20,hue=(r.diveScore*3.6+i*3)%360,gr=ctx.createLinearGradient(x,cy-h,x,cy+h);gr.addColorStop(0,`hsla(${hue},90%,65%,0)`);gr.addColorStop(.48,`hsla(${hue},90%,65%,.38)`);gr.addColorStop(1,`hsla(${hue},90%,65%,0)`);ctx.fillStyle=gr;ctx.fillRect(x-2,cy-h,4,h*2)}requestAnimationFrame(draw)})()}function bind(){e.login.onclick=login;e.auth.onclick=()=>s.token?loadSpotify(true):login();e.logout.onclick=()=>{localStorage.removeItem(TOKEN);s.token=null;authButtons();loadDemo();status('ログアウトしました。デモ表示に戻します。')};e.demo.onclick=loadDemo;e.scroll.onclick=()=>$('#experience')?.scrollIntoView({behavior:'smooth'});e.preview.onclick=preview;e.search.oninput=ev=>{s.query=ev.target.value;filter();if(s.visible[0])select(s.visible[0])};$$('.filter-chip').forEach(b=>b.onclick=()=>{$$('.filter-chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');s.range=b.dataset.range||'medium_term';s.token?loadSpotify():loadDemo()});document.addEventListener('pointermove',ev=>{const x=ev.clientX/Math.max(innerWidth,1)-.5,y=ev.clientY/Math.max(innerHeight,1)-.5;e.sleeve.style.transform=`rotateX(${10-y*8}deg) rotateY(${-16+x*14}deg) rotateZ(${3+x*2}deg)`})}async function init(){bind();viz();await callback();stored();authButtons();s.token?await loadSpotify():loadDemo()}init()})();
+(() => {
+  const API = 'https://api.spotify.com/v1';
+  const TOKEN = 'record_dive_token';
+  const VERIFIER = 'record_dive_code_verifier';
+  const STATE = 'record_dive_auth_state';
+
+  const ranges = {
+    short_term: '4週間',
+    medium_term: '6ヶ月',
+    long_term: '全期間'
+  };
+
+  const demo = [
+    ['Plastic Love', 'Mariya Takeuchi', 'VARIETY', 88, 22, 96, '1980s', ['city pop', 'night drive'], 'https://i.scdn.co/image/ab67616d0000b2730633e5b8b8a3f64f6528ad6d', 'https://open.spotify.com/search/Plastic%20Love%20Mariya%20Takeuchi'],
+    ['Sparkle', 'Tatsuro Yamashita', 'FOR YOU', 84, 30, 92, '1980s', ['aor', 'summer'], 'https://i.scdn.co/image/ab67616d0000b2734ef7c8edc11f59f9995d0f45', 'https://open.spotify.com/search/Sparkle%20Tatsuro%20Yamashita'],
+    ['Stay With Me', 'Miki Matsubara', 'Pocket Park', 91, 18, 89, '1970s', ['city pop', 'midnight'], 'https://i.scdn.co/image/ab67616d0000b273d5f8d5aa4a537c2f4c02acda', 'https://open.spotify.com/search/Stay%20With%20Me%20Miki%20Matsubara'],
+    ['Sweet Soul Revue', 'Pizzicato Five', 'Bossa Nova 2001', 74, 44, 85, '1990s', ['shibuya-kei', 'groove'], 'https://i.scdn.co/image/ab67616d0000b273f0a627db1f953875ed2e9dc2', 'https://open.spotify.com/search/Sweet%20Soul%20Revue%20Pizzicato%20Five'],
+    ['ばらの花', 'くるり', 'TEAM ROCK', 78, 38, 82, '2000s', ['japanese indie', 'rainy'], 'https://i.scdn.co/image/ab67616d0000b273352b935793bd162f02bd99c9', 'https://open.spotify.com/search/%E3%81%B0%E3%82%89%E3%81%AE%E8%8A%B1%20%E3%81%8F%E3%82%8B%E3%82%8A'],
+    ['Imaginary Beats', 'Record Dive', 'Sample Crate', 69, 57, 81, '2000s', ['lofi', 'jazz hop'], 'https://i.scdn.co/image/ab67616d0000b2732c4c0a955156f3b9cce9bd2d', 'https://open.spotify.com/search/Nujabes']
+  ].map((r, i) => ({
+    id: `demo-${i}`,
+    title: r[0],
+    artist: r[1],
+    album: r[2],
+    rank: i + 1,
+    popularity: r[3],
+    rarity: r[4],
+    diveScore: r[5],
+    yearHint: r[6],
+    genres: r[7],
+    cover: r[8],
+    spotifyUrl: r[9],
+    previewUrl: null
+  }));
+
+  const state = {
+    token: null,
+    range: 'medium_term',
+    query: '',
+    records: [],
+    visible: [],
+    selected: null,
+    endpoints: 0,
+    audio: null,
+    t: 0,
+    cache: {}
+  };
+
+  const $ = (query, root = document) => root.querySelector(query);
+  const $$ = (query, root = document) => Array.from(root.querySelectorAll(query));
+
+  const el = {
+    login: $('#login-btn'),
+    logout: $('#logout-btn'),
+    demo: $('#demo-btn'),
+    auth: $('#auth-btn'),
+    scroll: $('#scroll-btn'),
+    status: $('#status-panel'),
+    statusText: $('#status-text'),
+    shelf: $('#record-shelf'),
+    tpl: $('#record-card-template'),
+    search: $('#record-search'),
+    count: $('#crate-count'),
+    insight: $('#insight-copy'),
+    heroCover: $('#hero-cover'),
+    vinylCover: $('#vinyl-cover'),
+    sleeve: $('#floating-sleeve'),
+    heroScore: $('#hero-score'),
+    vinyl: $('#vinyl'),
+    title: $('#now-title'),
+    artist: $('#now-artist'),
+    tags: $('#tag-row'),
+    pop: $('#score-popularity'),
+    rarity: $('#score-rarity'),
+    dive: $('#score-dive'),
+    preview: $('#preview-btn'),
+    open: $('#open-spotify'),
+    endpoints: $('#metric-endpoints'),
+    recs: $('#metric-records'),
+    mood: $('#metric-mood'),
+    player: $('#metric-player'),
+    viz: $('#audio-canvas')
+  };
+
+  const avg = values => values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const unique = values => [...new Set(values.filter(Boolean))];
+
+  function cfg() {
+    const c = window.RECORD_DIVE_CONFIG || {};
+    return {
+      clientId: c.CLIENT_ID || 'YOUR_SPOTIFY_CLIENT_ID_HERE',
+      auth: c.AUTH_URL || 'https://accounts.spotify.com/authorize',
+      token: c.TOKEN_ENDPOINT || 'https://accounts.spotify.com/api/token',
+      scopes: c.SCOPES || 'user-top-read user-read-private user-read-email',
+      redirect: c.REDIRECT_URI || `${location.origin}${location.pathname}`
+    };
+  }
+
+  function status(message, tone = 'neutral') {
+    if (!el.statusText || !el.status) return;
+    el.statusText.textContent = message;
+    el.status.classList.toggle('is-ok', tone === 'ok');
+    el.status.classList.toggle('is-error', tone === 'error');
+  }
+
+  function metrics() {
+    if (el.endpoints) el.endpoints.textContent = state.endpoints;
+    if (el.recs) el.recs.textContent = state.visible.length;
+    if (el.player) el.player.textContent = state.audio && !state.audio.paused ? 'PLAY' : 'IDLE';
+    if (el.mood) el.mood.textContent = mood(state.visible);
+  }
+
+  function mood(records) {
+    if (!records.length) return '--';
+    const popularity = avg(records.map(r => r.popularity));
+    const rarity = avg(records.map(r => r.rarity));
+    const genreText = records.flatMap(r => r.genres).join(' ');
+    if (popularity > 78 && rarity < 35) return 'ANTHEM';
+    if (rarity > 58) return 'DEEP';
+    if (genreText.includes('city')) return 'CITY';
+    if (genreText.includes('rock')) return 'ROCK';
+    return 'MIXED';
+  }
+
+  async function randomString(length = 96) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    const bytes = crypto.getRandomValues(new Uint8Array(length));
+    return [...bytes].map(byte => chars[byte % chars.length]).join('');
+  }
+
+  async function sha256(value) {
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  }
+
+  function base64Url(buffer) {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)))
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+  }
+
+  async function login() {
+    const c = cfg();
+    if (!c.clientId || c.clientId === 'YOUR_SPOTIFY_CLIENT_ID_HERE') {
+      status('CLIENT_IDが未設定です。config.jsを確認してください。', 'error');
+      return;
+    }
+
+    const verifier = await randomString();
+    const challenge = base64Url(await sha256(verifier));
+    const authState = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+
+    sessionStorage.setItem(VERIFIER, verifier);
+    sessionStorage.setItem(STATE, authState);
+
+    const params = new URLSearchParams({
+      client_id: c.clientId,
+      response_type: 'code',
+      redirect_uri: c.redirect,
+      scope: c.scopes,
+      state: authState,
+      code_challenge_method: 'S256',
+      code_challenge: challenge
+    });
+
+    location.href = `${c.auth}?${params}`;
+  }
+
+  async function callback() {
+    const url = new URL(location.href);
+    const code = url.searchParams.get('code');
+    const error = url.searchParams.get('error');
+    const incomingState = url.searchParams.get('state');
+
+    if (error) {
+      status(`Spotify認証エラー: ${error}`, 'error');
+      cleanAuthUrl();
+      return false;
+    }
+
+    if (!code) return false;
+
+    const verifier = sessionStorage.getItem(VERIFIER);
+    const expectedState = sessionStorage.getItem(STATE);
+    if (!verifier || expectedState !== incomingState) {
+      status('Spotify認証の検証に失敗しました。もう一度ログインしてください。', 'error');
+      cleanAuthUrl();
+      return false;
+    }
+
+    const c = cfg();
+    try {
+      const res = await fetch(c.token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: c.clientId,
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: c.redirect,
+          code_verifier: verifier
+        })
+      });
+
+      if (!res.ok) throw new Error(`token exchange failed: ${res.status}`);
+
+      const token = await res.json();
+      token.expires_at = Date.now() + token.expires_in * 1000;
+      localStorage.setItem(TOKEN, JSON.stringify(token));
+      state.token = token;
+      cleanAuthUrl();
+      status('Spotify接続完了。あなたのレコード棚を生成します。', 'ok');
+      return true;
+    } catch (error) {
+      console.error(error);
+      status('トークン取得に失敗しました。Spotify DashboardのRedirect URIを確認してください。', 'error');
+      cleanAuthUrl();
+      return false;
+    }
+  }
+
+  function cleanAuthUrl() {
+    history.replaceState({}, document.title, `${location.origin}${location.pathname}`);
+    sessionStorage.removeItem(VERIFIER);
+    sessionStorage.removeItem(STATE);
+  }
+
+  function restoreToken() {
+    try {
+      const token = JSON.parse(localStorage.getItem(TOKEN) || 'null');
+      if (!token?.access_token || Date.now() > token.expires_at - 30000) {
+        localStorage.removeItem(TOKEN);
+        return null;
+      }
+      state.token = token;
+      return token;
+    } catch {
+      localStorage.removeItem(TOKEN);
+      return null;
+    }
+  }
+
+  function authButtons() {
+    const loggedIn = Boolean(state.token?.access_token);
+    el.login?.classList.toggle('hidden', loggedIn);
+    el.logout?.classList.toggle('hidden', !loggedIn);
+    if (el.auth) el.auth.textContent = loggedIn ? '自分のSpotifyを再解析' : '自分のSpotifyを解析する';
+  }
+
+  async function api(path) {
+    if (!state.token) throw new Error('not authed');
+    state.endpoints += 1;
+    metrics();
+
+    const res = await fetch(`${API}${path}`, {
+      headers: { Authorization: `Bearer ${state.token.access_token}` }
+    });
+
+    if (res.status === 401) {
+      localStorage.removeItem(TOKEN);
+      state.token = null;
+      authButtons();
+      throw new Error('token expired');
+    }
+
+    if (!res.ok) throw new Error(`Spotify API error: ${res.status}`);
+    return res.json();
+  }
+
+  async function loadSpotify(force = false) {
+    if (!state.token) {
+      await login();
+      return;
+    }
+
+    if (state.cache?.[state.range] && !force) {
+      apply(state.cache[state.range]);
+      return;
+    }
+
+    status(`${ranges[state.range]}のSpotifyデータを取得中...`);
+
+    try {
+      const [me, tracks, artists] = await Promise.all([
+        api('/me'),
+        api(`/me/top/tracks?limit=36&time_range=${state.range}`),
+        api(`/me/top/artists?limit=50&time_range=${state.range}`)
+      ]);
+
+      const genreMap = new Map();
+      (artists.items || []).forEach(artist => {
+        genreMap.set(artist.id, artist.genres || []);
+        genreMap.set((artist.name || '').toLowerCase(), artist.genres || []);
+      });
+
+      const records = (tracks.items || []).map((track, index) => toRecord(track, index, genreMap));
+      state.cache = { ...(state.cache || {}), [state.range]: records };
+      apply(records);
+      status(`${me.display_name || 'Spotify user'} のレコード棚を生成しました。`, 'ok');
+    } catch (error) {
+      console.error(error);
+      status('Spotify API取得に失敗しました。デモ表示に切り替えます。', 'error');
+      loadDemo();
+    }
+  }
+
+  function toRecord(track, index, genreMap) {
+    const artists = track.artists || [];
+    const genres = unique(
+      artists.flatMap(artist => genreMap.get(artist.id) || genreMap.get((artist.name || '').toLowerCase()) || [])
+    ).slice(0, 4);
+
+    const popularity = Number(track.popularity || 0);
+    const rarity = clamp(100 - popularity + index * 1.25, 4, 99);
+    const diveScore = Math.round(
+      clamp(popularity * 0.48 + rarity * 0.28 + clamp(42 - index, 0, 42) + (genres.length ? 8 : 0), 0, 99)
+    );
+
+    const cover = track.album?.images?.[0]?.url || track.album?.images?.[1]?.url || '';
+
+    return {
+      id: track.id || `track-${index}`,
+      title: track.name || 'Unknown track',
+      artist: artists.map(artist => artist.name).join(', ') || 'Unknown artist',
+      album: track.album?.name || 'Unknown album',
+      rank: index + 1,
+      popularity,
+      rarity: Math.round(rarity),
+      diveScore,
+      yearHint: era(track.album?.release_date),
+      genres: genres.length ? genres : ['personal pick'],
+      cover,
+      spotifyUrl: track.external_urls?.spotify || '#',
+      previewUrl: track.preview_url || null
+    };
+  }
+
+  function era(date = '') {
+    const year = Number(String(date).slice(0, 4));
+    return year ? `${Math.floor(year / 10) * 10}s` : 'unknown era';
+  }
+
+  function apply(records) {
+    state.records = records.length ? records : demo;
+    filter();
+    if (state.visible[0]) select(state.visible[0], { autoplay: false });
+    metrics();
+  }
+
+  function loadDemo() {
+    apply(demo);
+  }
+
+  function filter() {
+    const query = state.query.trim().toLowerCase();
+    state.visible = state.records.filter(record => {
+      const target = [record.title, record.artist, record.album, record.yearHint, ...record.genres].join(' ').toLowerCase();
+      return !query || target.includes(query);
+    });
+
+    render();
+    if (el.count) el.count.textContent = `${state.visible.length}枚`;
+    if (el.insight) el.insight.textContent = insight(state.visible);
+    metrics();
+  }
+
+  function insight(records) {
+    if (!records.length) return '該当するレコードがありません。検索条件を変えてください。';
+    const counts = new Map();
+    records.forEach(record => record.genres.forEach(genre => counts.set(genre, (counts.get(genre) || 0) + 1)));
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([genre]) => genre).join(' / ');
+    return `${ranges[state.range] || 'デモ'}の棚は ${top || 'mixed'} 寄り。平均DIVE SCOREは${Math.round(avg(records.map(record => record.diveScore)))}。今日は${records[0].title}から聴くのが良さそうです。`;
+  }
+
+  function render() {
+    if (!el.shelf || !el.tpl) return;
+    el.shelf.innerHTML = '';
+
+    state.visible.forEach(record => {
+      const node = el.tpl.content.firstElementChild.cloneNode(true);
+      const image = $('.record-cover', node);
+      node.dataset.id = record.id;
+      image.src = record.cover;
+      image.alt = `${record.album} album artwork`;
+      $('.record-rank', node).textContent = `#${record.rank}`;
+      $('.record-caption strong', node).textContent = record.title;
+      $('.record-caption small', node).textContent = record.artist;
+      node.classList.toggle('is-selected', state.selected?.id === record.id);
+      node.addEventListener('pointermove', event => tilt(event, node));
+      node.addEventListener('pointerleave', () => reset(node));
+      node.addEventListener('click', () => select(record, { autoplay: true }));
+      el.shelf.appendChild(node);
+    });
+  }
+
+  function tilt(event, node) {
+    const rect = node.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width - 0.5;
+    const y = (event.clientY - rect.top) / rect.height - 0.5;
+    node.style.setProperty('--tilt-y', `${x * 11}deg`);
+    node.style.setProperty('--tilt-x', `${y * -11}deg`);
+    node.style.setProperty('--mx', `${x * 120}px`);
+    node.style.setProperty('--my', `${y * 120}px`);
+  }
+
+  function reset(node) {
+    node.style.setProperty('--tilt-y', '0deg');
+    node.style.setProperty('--tilt-x', '0deg');
+    node.style.setProperty('--mx', '0px');
+    node.style.setProperty('--my', '0px');
+  }
+
+  function select(record, options = {}) {
+    state.selected = record;
+    stopAudio({ resetButton: false });
+
+    if (el.heroCover) el.heroCover.src = record.cover;
+    if (el.vinylCover) el.vinylCover.src = record.cover;
+    if (el.heroScore) el.heroScore.textContent = String(record.diveScore).padStart(2, '0');
+    if (el.title) el.title.textContent = record.title;
+    if (el.artist) el.artist.textContent = `${record.artist} — ${record.album}`;
+    if (el.pop) el.pop.textContent = record.popularity;
+    if (el.rarity) el.rarity.textContent = record.rarity;
+    if (el.dive) el.dive.textContent = record.diveScore;
+    if (el.open) el.open.href = record.spotifyUrl || '#';
+
+    if (el.preview) {
+      el.preview.disabled = !record.previewUrl;
+      el.preview.classList.remove('is-playing');
+      el.preview.textContent = record.previewUrl ? '試聴する' : 'プレビューなし';
+    }
+
+    if (el.tags) {
+      el.tags.innerHTML = '';
+      [record.yearHint, ...record.genres].slice(0, 5).forEach(tag => {
+        const item = document.createElement('span');
+        item.textContent = tag;
+        el.tags.appendChild(item);
+      });
+    }
+
+    $$('.record-card', el.shelf).forEach(card => {
+      card.classList.toggle('is-selected', card.dataset.id === record.id);
+    });
+
+    if (el.sleeve) {
+      el.sleeve.style.boxShadow = `0 30px 90px rgba(0,0,0,.42),0 0 90px rgba(29,185,84,.24)`;
+    }
+
+    metrics();
+
+    if (options.autoplay && record.previewUrl) {
+      playSelectedPreview({ fromUserSelection: true });
+    }
+  }
+
+  async function playSelectedPreview({ fromUserSelection = false } = {}) {
+    const record = state.selected;
+    if (!record?.previewUrl) {
+      stopAudio();
+      return false;
+    }
+
+    if (state.audio && state.audio.src === record.previewUrl && !state.audio.paused) {
+      stopAudio();
+      return false;
+    }
+
+    stopAudio({ resetButton: false });
+
+    const audio = new Audio(record.previewUrl);
+    audio.crossOrigin = 'anonymous';
+    audio.volume = 0.82;
+    state.audio = audio;
+
+    try {
+      await audio.play();
+      el.vinyl?.classList.add('is-playing');
+      if (el.preview) {
+        el.preview.textContent = '停止する';
+        el.preview.classList.add('is-playing');
+      }
+      metrics();
+      audio.addEventListener('ended', () => stopAudio(), { once: true });
+      return true;
+    } catch (error) {
+      console.warn('Preview play failed:', error);
+      stopAudio();
+      if (fromUserSelection) {
+        status('このブラウザでは自動試聴が止められました。試聴するボタンを押してください。', 'error');
+      }
+      return false;
+    }
+  }
+
+  function stopAudio({ resetButton = true } = {}) {
+    if (state.audio) {
+      state.audio.pause();
+      state.audio.currentTime = 0;
+      state.audio = null;
+    }
+
+    el.vinyl?.classList.remove('is-playing');
+    el.preview?.classList.remove('is-playing');
+
+    if (resetButton && el.preview) {
+      el.preview.textContent = state.selected?.previewUrl ? '試聴する' : 'プレビューなし';
+      el.preview.disabled = !state.selected?.previewUrl;
+    }
+
+    metrics();
+  }
+
+  function visualizer() {
+    if (!el.viz) return;
+    const canvas = el.viz;
+    const ctx = canvas.getContext('2d');
+    const isMobile = matchMedia('(max-width: 860px), (pointer: coarse)').matches;
+    if (isMobile) return;
+
+    const resize = () => {
+      canvas.width = innerWidth;
+      canvas.height = innerHeight;
+    };
+    addEventListener('resize', resize);
+    resize();
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      state.t += 0.018;
+      const record = state.selected || demo[0];
+      const bars = 42;
+      const cy = canvas.height * 0.72;
+      for (let i = 0; i < bars; i += 1) {
+        const x = canvas.width / (bars - 1) * i;
+        const h = (Math.sin(state.t * 2 + i * 0.42) * 0.5 + 0.5) * (record.diveScore / 100) * canvas.height * 0.18 + 16;
+        const gradient = ctx.createLinearGradient(x, cy - h, x, cy + h);
+        gradient.addColorStop(0, 'rgba(29,185,84,0)');
+        gradient.addColorStop(0.48, 'rgba(30,215,96,.26)');
+        gradient.addColorStop(1, 'rgba(29,185,84,0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x - 2, cy - h, 4, h * 2);
+      }
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  }
+
+  function bind() {
+    if (el.login) el.login.onclick = login;
+    if (el.auth) el.auth.onclick = () => state.token ? loadSpotify(true) : login();
+    if (el.logout) {
+      el.logout.onclick = () => {
+        stopAudio();
+        localStorage.removeItem(TOKEN);
+        state.token = null;
+        authButtons();
+        loadDemo();
+        status('ログアウトしました。デモ表示に戻します。');
+      };
+    }
+    if (el.demo) el.demo.onclick = () => { stopAudio(); loadDemo(); };
+    if (el.scroll) el.scroll.onclick = () => $('#feature-clarity')?.scrollIntoView({ behavior: 'smooth' });
+    if (el.preview) el.preview.onclick = () => playSelectedPreview();
+    if (el.search) {
+      el.search.oninput = event => {
+        state.query = event.target.value;
+        filter();
+        if (state.visible[0]) select(state.visible[0], { autoplay: false });
+      };
+    }
+
+    $$('.filter-chip').forEach(button => {
+      button.onclick = () => {
+        stopAudio();
+        $$('.filter-chip').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        state.range = button.dataset.range || 'medium_term';
+        state.token ? loadSpotify() : loadDemo();
+      };
+    });
+
+    document.addEventListener('pointermove', event => {
+      if (!el.sleeve) return;
+      const x = event.clientX / Math.max(innerWidth, 1) - 0.5;
+      const y = event.clientY / Math.max(innerHeight, 1) - 0.5;
+      el.sleeve.style.transform = `rotateX(${10 - y * 8}deg) rotateY(${-16 + x * 14}deg) rotateZ(${3 + x * 2}deg)`;
+    }, { passive: true });
+  }
+
+  async function init() {
+    bind();
+    visualizer();
+    await callback();
+    restoreToken();
+    authButtons();
+    state.token ? await loadSpotify() : loadDemo();
+  }
+
+  init();
+})();
