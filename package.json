@@ -1,0 +1,12 @@
+{
+  "name": "spotify-richweb-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Immersive Spotify record digging experience",
+  "scripts": {
+    "start": "npx serve -s . -l 3000"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
