@@ -35,15 +35,8 @@
           <div class="lane two"></div>
           <div class="lane three"></div>
           <div class="orbit"></div>
-          <div class="deck">
-            <div class="vinyl"></div>
-            <div class="cover"><img id="main-cover" alt="selected album cover" /></div>
-          </div>
-          <div class="caption">
-            <small>NOW FLOATING</small>
-            <strong id="motion-title">Spotify login required</strong>
-            <span id="motion-artist">ログインするとあなたのTop Tracksが流れます</span>
-          </div>
+          <div class="deck"><div class="vinyl"></div><div class="cover"><img id="main-cover" alt="selected album cover" /></div></div>
+          <div class="caption"><small>NOW FLOATING</small><strong id="motion-title">Spotify login required</strong><span id="motion-artist">ログインするとあなたのTop Tracksが流れます</span></div>
           <div class="meter"><i></i></div>
         </div>
       </div>
@@ -53,11 +46,10 @@
     <article class="panel">
       <p class="eyebrow">SELECTED RECORD</p>
       <h2 id="detail-title">Dive waiting</h2>
-      <p id="detail-copy">選んだ曲がここに浮かびます。数字より、ジャケットと動きで殴ります。</p>
-      <div class="hero-actions">
-        <button class="btn" id="prev-btn" type="button">← 前へ</button>
-        <button class="btn primary" id="next-btn" type="button">次へ →</button>
-      </div>
+      <p>選んだ曲がここに浮かびます。数字より、ジャケットと動きで殴ります。</p>
+      <p id="detail-copy" class="hidden"></p>
+      <span id="score-dive" class="hidden"></span><span id="score-pop" class="hidden"></span><span id="score-type" class="hidden"></span>
+      <div class="hero-actions"><button class="btn" id="prev-btn" type="button">← 前へ</button><button class="btn primary" id="next-btn" type="button">次へ →</button></div>
     </article>
     <article class="panel embed">
       <p class="eyebrow">REAL SPOTIFY PLAYER</p>
