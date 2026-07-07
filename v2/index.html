@@ -21,7 +21,7 @@
       <div class="hero-copy">
         <div class="kicker"><i></i> SPOTIFY RECORD TUNNEL</div>
         <h1>Enter<br>your<br>music.</h1>
-        <p class="lead">説明より先に、潜る。あなたのTop Tracksを読み込み、ジャケットが流れる音楽空間として再構成します。デモはありません。Spotifyで入って、自分の棚だけを見る。</p>
+        <p class="lead">点数もタイプもいらない。あなたのSpotifyから流れてくるジャケットを掴んで、回して、ただ気持ちよく潜るための画面。</p>
         <div class="hero-actions">
           <button class="btn primary" id="enter-btn" type="button">Spotifyで潜る</button>
           <a class="btn" id="open-spotify" href="https://open.spotify.com/" target="_blank" rel="noreferrer">Spotifyを開く</a>
@@ -40,7 +40,7 @@
             <div class="cover"><img id="main-cover" alt="selected album cover" /></div>
           </div>
           <div class="caption">
-            <small>NOW DIVING</small>
+            <small>NOW FLOATING</small>
             <strong id="motion-title">Spotify login required</strong>
             <span id="motion-artist">ログインするとあなたのTop Tracksが流れます</span>
           </div>
@@ -53,12 +53,7 @@
     <article class="panel">
       <p class="eyebrow">SELECTED RECORD</p>
       <h2 id="detail-title">Dive waiting</h2>
-      <p id="detail-copy">Spotifyでログインすると、選択中の曲のDIVE SCOREとタイプがここに出ます。</p>
-      <div class="score-grid">
-        <div class="score"><span>DIVE</span><strong id="score-dive">--</strong></div>
-        <div class="score"><span>POPULARITY</span><strong id="score-pop">--</strong></div>
-        <div class="score"><span>TYPE</span><strong id="score-type">--</strong></div>
-      </div>
+      <p id="detail-copy">選んだ曲がここに浮かびます。数字より、ジャケットと動きで殴ります。</p>
       <div class="hero-actions">
         <button class="btn" id="prev-btn" type="button">← 前へ</button>
         <button class="btn primary" id="next-btn" type="button">次へ →</button>
@@ -66,8 +61,8 @@
     </article>
     <article class="panel embed">
       <p class="eyebrow">REAL SPOTIFY PLAYER</p>
-      <div class="empty" id="empty-player">曲を選ぶとSpotify公式プレイヤーがここに出ます。再生はプレイヤー内のボタンを押してください。</div>
-      <iframe id="spotify-frame" title="Spotify player" allow="encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+      <div class="empty" id="empty-player">曲を選ぶとSpotify公式プレイヤーがここに出ます。</div>
+      <iframe id="spotify-frame" title="Spotify player" loading="lazy"></iframe>
     </article>
   </section>
   <script src="../config.js"></script>
